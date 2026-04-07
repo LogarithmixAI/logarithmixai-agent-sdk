@@ -1,0 +1,829 @@
+from agent_sdk.core.event_builder import build_event
+import threading
+
+def build_trace_event(trace):
+
+    root = trace["spans"][trace["root_span_id"]]
+
+    return build_event(
+        event_type="TRACE_SUMMARY",
+        category="SYSTEM",
+        status=root["outcome"],
+        
+        metrics={
+            "duration_ms": root.get("duration_ms"),
+            "span_count": len(trace["spans"])
+        },
+
+        data={
+            "trace_id": trace["trace_id"],
+            "root_span_id": trace["root_span_id"],
+
+            # 🔥 intelligence
+            "outcome": root["outcome"],
+            "event_flow": root.get("event_flow", []),
+            "root_cause": extract_root_cause(trace),
+            "intelligence": build_intelligence(trace),
+
+
+            # 🔥 IMPORTANT ADD
+            "event_ids": root.get("event_ids", []),
+
+            # 🔥 span mapping
+            "spans": {
+                k: {
+                    "type": v["type"],
+                    "outcome": v.get("outcome"),
+                    "parent": v.get("parent_span_id"),
+                    'child_span_ids': v.get("child_span_ids", []),
+                    "event_ids": v.get("event_ids", []),
+                    "event_flow": v.get("event_flow", []),
+                    "duration_ms": v.get("duration_ms"),
+                    "extra": v.get("extra", {}),
+
+                }
+                for k, v in trace["spans"].items()
+            }
+        }
+    )
+
+
+
+'''
+================================================================
+    🔥 ADD MORE ROOT CAUSE CLASSIFICATIONS HERE
+================================================================
+
+## span types to consider: application_logic, http_call, db_query, cache, external_api, etc.
+
+
+
+---------------- outcome-based classification example ----------------
+
+    def add_outcome(self, span:Span):
+
+    outcome = self.derive_span_outcome(span)
+    span.outcome = outcome
+
+    def derive_span_outcome(self, span:Span):
+
+    max_outcome = self.derive_outcome(span.event_flow)
+
+    for child_id in span.child_span_ids:
+        child = self.get_span(child_id)
+
+        if not child or not child.outcome:
+            continue
+        
+        child_outcome = child.outcome 
+
+        if OUTCOME_ORDER[child_outcome] > OUTCOME_ORDER[max_outcome]:
+            max_outcome = child_outcome
+
+    return max_outcome
+
+    def derive_outcome(self, event_flow):
+
+    max_severity = "LOW"
+
+    for event in event_flow:
+        severity = SEVERITY_MAP.get(event, "LOW")
+
+        if SEVERITY_ORDER[severity] > SEVERITY_ORDER[max_severity]:
+            max_severity = severity
+
+    if max_severity == "CRITICAL":
+        return "CRITICAL"
+
+    if max_severity == "HIGH":
+        return "FAILED"
+
+    if max_severity == "MEDIUM":
+        return "DEGRADED"
+
+    return "SUCCESS"
+
+---------------- span_structure example ----------------
+
+    {
+        "span_id": self.span_id,
+        "trace_id": self.trace_id,
+        "parent_span_id": self.parent_span_id,
+        "child_span_ids": self.child_span_ids,
+        "event_ids": self.event_ids,
+        "outcome": self.outcome,
+        "event_flow": self.event_flow,
+        "retry":self.retry,
+        "name": self.name,
+        "type": self.span_type,
+        "status": self.status,
+        "start_time": self.start_time,
+        "end_time": self.end_time,
+        "duration_ms": self.duration,
+        "span_events": self.span_events,
+        "extra": self.extra  ## this span_extra_data will contain the context from pipeline.end(span_extra_data)
+    }
+
+---------------  http_request pipeline context (span_extra_data) ---------------
+    pipeline.start("request", "http_request")
+
+    pipeline.end(
+        span_extra_data={
+            "classification": event_type,
+            "path": request.path,
+            "method": request.method,
+            "status_code": status_code,
+            "duration_ms": duration,
+            "exception_type": type(exc).__name__ if exc else None,
+        }
+    )
+
+--------------- application_logic pipeline context (span_extra_data) ---------------
+    pipeline.start("request_processing", "application_logic")  # start processing span
+
+    pipeline.end(
+        span_extra_data={
+            "stage": "processing",
+            "path": request.path,
+            "method": request.method,
+            "exception_type": type(e).__name__,
+            "status_code": status_code
+        }
+    )
+
+----------------- http_call pipeline context (span_extra_data ) -----------------
+
+    pipeline.start("External_HTTP_Call", "http_call") 
+    pipeline.end(
+        span_extra_data={
+            "url": safe_url,
+            "method": method,
+            "status_code": status_code,
+            "duration_ms": duration_ms,
+            "host": parsed.netloc,
+            "path": parsed.path,
+            "error": True if exc else False,
+            "exception_type": type(exc).__name__ if exc else None,
+            "is_slow": duration_ms >= 1000
+        }
+    )
+
+----------------- db_query pipeline context (span_extra_data) -----------------
+    pipeline.start("Database_operation", "db_query")
+    ## success case:
+    pipeline.end(
+        span_extra_data={
+            "query_type": query_type,
+            "table": table,
+            "duration_ms": duration_ms,
+            "rowcount": getattr(cursor, "rowcount", None),
+            "is_slow": duration_ms >= 500,
+        }
+    )
+
+    ## error case:
+    pipeline.end(
+        span_extra_data={
+            "query_type": query_type,
+            "table": table,
+            "duration_ms": duration_ms,
+            "exception_type": exception_type,
+            "error": True
+        }
+    )
+
+-------------------------- functional pipeline context (span_extra_data) --------------------------
+    should_trace = exception or duration_ms >= threshold_ms
+
+    if should_trace:
+    pipeline.start("function_call", "function_performance")
+
+    pipeline.end(
+        span_extra_data={
+            "function": f"{func.__module__}.{func.__qualname__}",
+            "duration_ms": duration_ms,
+            "error": bool(exception),
+            "exception_type": type(exception).__name__ if exception else None,
+            "is_slow": duration_ms >= threshold_ms
+        }
+    )
+
+---------------------------- exception pipeline context (span_extra_data) ----------------------------
+    create_span = not pipeline.has_active_trace()
+
+    if create_span:
+    pipeline.start("exception", "uncatchable_exception")
+
+    pipeline.end(
+        span_extra_data={
+            "exception_type": exception_type,
+            "message": message,
+            "file": file_name,
+            "line": line_number,
+            "function": function_name,
+            "handled": handled
+        }
+    )  # end main exception span
+
+==================================================================
+event_flow structure example:
+==================================================================
+
+## Event TYPES CLASSIFICATION : 
+
+exception type: 
+def classify_exception(exc_type, message):
+
+    msg = (message or "").lower()
+    exc = exc_type.lower()
+
+    # 🔴 Timeout / latency
+    if "timeout" in msg:
+        return "EXCEPTION_TIMEOUT"
+
+    # 🔴 Network
+    if "connection" in msg:
+        return "EXCEPTION_CONNECTION_ERROR"
+
+    # 🔴 Database
+    if "integrity" in exc or "constraint" in msg:
+        return "EXCEPTION_DB_INTEGRITY"
+
+    if "deadlock" in msg:
+        return "EXCEPTION_DB_DEADLOCK"
+
+    # 🔴 Auth
+    if "unauthorized" in msg or "token" in msg:
+        return "EXCEPTION_AUTH_ERROR"
+
+    if "permission" in msg:
+        return "EXCEPTION_PERMISSION_DENIED"
+
+    # 🔴 Programming errors
+    if exc in ["keyerror", "attributeerror", "typeerror"]:
+        return "EXCEPTION_PROGRAMMING_ERROR"
+
+    if exc in ["valueerror"]:
+        return "EXCEPTION_VALIDATION_ERROR"
+
+    # 🔴 Critical system
+    if exc in ["memoryerror", "recursionerror"]:
+        return "EXCEPTION_CRITICAL"
+
+    return "EXCEPTION_GENERAL"
+
+loging log: 
+def classify_log(message, level):
+
+    msg = (message or "").lower()
+
+    # 🔴 infra / network
+    if "timeout" in msg:
+        return "LOG_TIMEOUT"
+
+    if "connection refused" in msg or "connection error" in msg:
+        return "LOG_CONNECTION_ERROR"
+
+    # 🔴 database
+    if "deadlock" in msg:
+        return "LOG_DB_DEADLOCK"
+
+    if "duplicate" in msg or "constraint" in msg:
+        return "LOG_DB_INTEGRITY"
+
+    # 🔴 auth
+    if "unauthorized" in msg or "token" in msg:
+        return "LOG_AUTH_ERROR"
+
+    if "permission denied" in msg:
+        return "LOG_PERMISSION_DENIED"
+
+    # 🔴 code issues
+    if level >= logging.CRITICAL:
+        return "LOG_CRITICAL"
+
+    if level >= logging.ERROR:
+        return "LOG_ERROR"
+
+    if level >= logging.WARNING:
+        return "LOG_WARNING"
+
+    return "LOG_INFO"
+
+function logs:
+def classify_function(duration, exc, slow_threshold, timeout_threshold):
+
+    is_slow = duration >= slow_threshold
+    is_timeout = duration >= timeout_threshold
+
+    if is_timeout:
+        return "FUNCTION_TIMEOUT"
+
+    if exc:
+        if is_slow:
+            return "FUNCTION_SLOW_FAILURE"
+        return "FUNCTION_FAILED"
+
+    if is_slow:
+        return "FUNCTION_SLOW"
+
+    return "FUNCTION_SUCCESS"
+
+db logs:
+def classify_db(duration, error, exception_type=None, message=None,
+                slow_threshold=500, timeout_threshold=4000):
+
+    is_slow = duration and duration >= slow_threshold
+    is_timeout = duration and duration >= timeout_threshold
+
+    msg = (message or "").lower()
+    exc = (exception_type or "").lower()
+
+    # 🔴 1. Timeout
+    if is_timeout or "timeout" in msg:
+        return "DB_TIMEOUT"
+
+    # 🔴 2. Deadlock
+    if "deadlock" in msg:
+        return "DB_DEADLOCK"
+
+    # 🔴 3. Connection issues
+    if any(x in msg for x in ["connection refused", "could not connect", "connection error"]):
+        return "DB_CONNECTION_FAILED"
+
+    # 🔴 4. Integrity issues
+    if "integrity" in exc or "duplicate" in msg or "constraint" in msg:
+        return "DB_INTEGRITY_ERROR"
+
+    # 🔴 5. Syntax / programming
+    if "syntax" in msg or "programmingerror" in exc:
+        return "DB_SYNTAX_ERROR"
+
+    # 🔴 6. Generic failure
+    if error:
+        if is_slow:
+            return "DB_SLOW_FAILURE"
+        return "DB_FAILED"
+
+    # 🟢 7. Success
+    if is_slow:
+        return "DB_SLOW"
+
+    return "DB_SUCCESS"
+
+https logs:
+def classify_http(status_code, duration, exc, slow_threshold=1000, timeout_threshold=4000):
+
+    is_slow = duration and duration >= slow_threshold
+    is_timeout = duration and duration >= timeout_threshold
+
+    # 🔴 1. Timeout (highest priority)
+    if is_timeout:
+        return "HTTP_TIMEOUT"
+
+    # 🔴 2. Exception
+    if exc:
+        if is_slow:
+            return "HTTP_SLOW_FAILURE"
+        return "HTTP_EXCEPTION"
+
+    # 🔴 3. Specific 4xx cases
+    if status_code == 401:
+        return "HTTP_UNAUTHORIZED"
+
+    if status_code == 403:
+        return "HTTP_FORBIDDEN"
+
+    if status_code == 404:
+        return "HTTP_NOT_FOUND"
+
+    if status_code == 429:
+        return "HTTP_RATE_LIMITED"
+
+    # 🔴 4. Specific 5xx cases (infra insight)
+    if status_code == 502:
+        return "HTTP_BAD_GATEWAY"
+
+    if status_code == 503:
+        return "HTTP_SERVICE_UNAVAILABLE"
+
+    if status_code == 504:
+        return "HTTP_GATEWAY_TIMEOUT"
+
+    # 🔴 5. Generic server error
+    if status_code and status_code >= 500:
+        if is_slow:
+            return "HTTP_SLOW_FAILURE"
+        return "HTTP_FAILED_SERVER"
+
+    # 🔴 6. Generic client error
+    if status_code and status_code >= 400:
+        return "HTTP_FAILED_CLIENT"
+
+    # 🟢 7. Success cases
+    if is_slow:
+        return "HTTP_SLOW"
+
+    return "HTTP_SUCCESS"
+
+
+
+----------------- request event_flow example -----------------
+## event flow inside this pipeline : pipeline.start("request", "http_request")
+inside two event gatter mainly :
+event_flow : ["INCOMING_REQUEST", "RESPONSE"]
+
+in case of exception in request processing, event_flow will be : ["INCOMING_REQUEST", "REQUEST_EXCEPTION"]
+
+----------------- request_processing event_flow example -----------------
+## event flow inside this pipeline : pipeline.start("request_processing", "application_logic")
+
+event_flow : ["REQUEST_EXCEPTION", exception logs, logging logs, function logs]
+
+------------------------ http_call event_flow example --------------------------
+## event flow inside this pipeline : pipeline.start("External_HTTP_Call", "http_call") 
+
+event flow : [https logs']
+
+------------------------ db_query event_flow example --------------------------
+## event flow inside this pipeline : pipeline.start("Database_operation", "db_query") 
+
+event flow : [db logs]
+
+------------------------ exception event_flow example (conditional: not pipeline.has_active_trace())--------------------------
+## event flow inside this pipeline : pipeline.start("exception", "uncatchable_exception") 
+
+event flow : [exception logs]
+------------------------ functional event_flow example (conditional:exception or duration_ms >= threshold_ms)--------------------------
+## event flow inside this pipeline : pipeline.start("function_call", "function_performance")
+
+event flow : [function logs]
+
+'''
+
+def enrich_context(trace):
+
+    root = trace["spans"][trace["root_span_id"]]
+
+    return {
+        "path": root["extra"].get("path"),
+        "method": root["extra"].get("method"),
+        "status_code": root["extra"].get("status_code")
+    }
+
+def find_leaf_failures(trace):
+
+    spans = trace["spans"]
+
+    leaf_failures = []
+
+    for span_id, span in spans.items():
+
+        if span.get("outcome") not in ["FAILED", "CRITICAL", "DEGRADED"]:
+            continue
+
+        children = span.get("child_span_ids", [])
+
+        if not children:
+            leaf_failures.append(span)
+
+    return leaf_failures
+
+
+def normalize_event(event):
+
+    if "TIMEOUT" in event:
+        return "timeout"
+
+    if "DEADLOCK" in event:
+        return "deadlock"
+
+    if "CONNECTION" in event:
+        return "connection_issue"
+
+    if "INTEGRITY" in event:
+        return "data_issue"
+
+    if "SYNTAX" in event:
+        return "query_error"
+
+    if "FAILED" in event:
+        return "failure"
+
+    if "SLOW" in event:
+        return "slow"
+
+    if "SUCCESS" in event:
+        return "success"
+
+    return "other"
+
+def analyze_flow(flow):
+
+    normalized = [normalize_event(e) for e in flow]
+
+    return {
+        "pattern": normalized,
+        "had_failure": "failure" in normalized,
+        "had_timeout": "timeout" in normalized,
+        "had_slow": "slow" in normalized,
+        "had_retry_pattern": normalized.count("failure") > 1
+    }
+
+def build_cause(span):
+
+    extra = span.get("extra", {})
+    event_flow = span.get("event_flow", [])
+
+    # span_extra_data={
+    #     "stage": "processing",
+    #     "path": request.path,
+    #     "method": request.method,
+    #     "exception_type": type(e).__name__,
+    #     "status_code": status_code
+    # }
+
+    if span["type"] == "application_logic":
+        return {
+            "type": "application_logic",
+            "exception": extra.get("exception_type"),
+            "event_flow": event_flow,
+            "stage": extra.get("stage"),
+            "path": extra.get("path"),
+            "method": extra.get("method"),
+        }
+
+    # span_extra_data={
+    #         "url": safe_url,
+    #         "method": method,
+    #         "status_code": status_code,
+    #         "duration_ms": duration_ms,
+    #         "host": parsed.netloc,
+    #         "path": parsed.path,
+    #         "error": True if exc else False,
+    #         "exception_type": type(exc).__name__ if exc else None,
+    #         "is_slow": duration_ms >= 1000
+    # }
+
+    if span["type"] == "http_call":
+        return {
+            "type": "external_api",
+            "event_flow": event_flow,
+            "url": extra.get("url"),
+            "method": extra.get("method"),
+            "status_code": extra.get("status_code"),
+            "duration_ms": extra.get("duration_ms"),
+            "host": extra.get("host"),
+            "path": extra.get("path"),
+            "error": extra.get("error"),
+            "exception_type": extra.get("exception_type"),
+            "is_slow": extra.get("is_slow")
+        }
+
+    # span_extra_data={
+    #     "query_type": query_type,
+    #     "table": table,
+    #     "duration_ms": duration_ms,
+    #     "exception_type": exception_type,
+    #     "error": True
+    # }
+
+    if span["type"] == "db_query":
+        return {
+            "type": "database",
+            "event_flow": event_flow,
+            "table": extra.get("table"),
+            "duration_ms": extra.get("duration_ms"),
+            "query_type": extra.get("query_type"),
+            "exception": extra.get("exception_type"),
+        }
+
+    # span_extra_data={
+    #     "exception_type": exception_type,
+    #     "message": message,
+    #     "file": file_name,
+    #     "line": line_number,
+    #     "function": function_name,
+    #     "handled": handled
+    # }
+
+    if span["type"] == "uncatchable_exception":
+        return {
+            "type": "uncatchable_exception",
+            "event_flow": event_flow,
+            "exception": extra.get("exception_type"),
+            "message": extra.get("message"),
+            "file": extra.get("file"),
+            "line": extra.get("line"),
+            "function": extra.get("function"),
+            "handled": extra.get("handled")
+        }
+
+    # span_extra_data={
+    #     "function": f"{func.__module__}.{func.__qualname__}",
+    #     "duration_ms": duration_ms,
+    #     "error": bool(exception),
+    #     "exception_type": type(exception).__name__ if exception else None,
+    #     "is_slow": duration_ms >= threshold_ms
+    # }
+
+    if span["type"] == "function_performance":
+        return {
+            "type": "slow_function_operation",
+            "event_flow": event_flow,
+            "function": extra.get("function"),
+            "duration_ms": extra.get("duration_ms"),
+            "error": extra.get("error"),
+            "exception_type": extra.get("exception_type"),
+            "is_slow": extra.get("is_slow")
+        }
+
+
+    return {"type": span["type"]}
+
+
+def extract_root_cause(trace):
+
+    leaf_failures = find_leaf_failures(trace)
+
+    if not leaf_failures:
+        return None
+
+    # 🔥 priority logic (customize kar sakte ho)
+    priority_order = ["db_query",  "application_logic","uncatchable_exception", "http_call", "function_performance" ]
+
+    for p in priority_order:
+        for span in leaf_failures:
+            if span["type"] == p:
+                return build_cause(span)
+
+    # fallback
+    return build_cause(leaf_failures[0])
+
+
+def generate_explanation(trace):
+
+    ctx = enrich_context(trace)
+    cause = extract_root_cause(trace)
+
+    if not cause:
+        return "request response generated successfully without any issues"
+
+    flow = cause.get("event_flow", [])
+    behavior = analyze_flow(flow)
+    pattern = " → ".join(behavior.get("pattern", []))
+    method = ctx.get("method")
+    path = ctx.get("path")
+
+    if cause['type'] == "db_query":
+
+        # return {
+        #     "type": "database",
+        #     "event_flow": event_flow,
+        #     "table": extra.get("table"),
+        #     "duration_ms": extra.get("duration_ms"),
+        #     "query_type": extra.get("query_type"),
+        #     "exception": extra.get("exception_type"),
+        # }
+
+        if behavior["had_timeout"]:
+            return f"{method} {path} request failed due to database timeout during '{cause['query_type']}' query on '{cause['table']}' and it took {cause['duration_ms']} ms to fail indicating potential performance issues in the database layer and it exception was {cause['exception']} and pattern was {pattern} likely indicating contention or inefficient queries in the database"
+
+        if "deadlock" in behavior["pattern"]:
+            return f"{method} {path} request failed due to database deadlock during '{cause['query_type']}' query on '{cause['table']}' which indicates contention issues in the database and it exception was {cause['exception']} and pattern was {pattern} likely indicating multiple transactions are competing for the same resources in the database"
+
+        if behavior["had_slow"] and behavior["had_failure"]:
+            return f"{method} {path} request failed due to slow database performance during '{cause['query_type']}' query on '{cause['table']}' which took {cause['duration_ms']} ms indicating potential performance issues in the database layer and it exception was {cause['exception']} and pattern was {pattern} likely indicating inefficient queries or database load issues"
+
+        if behavior["had_failure"]:
+            return f"{method} {path} request failed due to database error ({cause['exception']}) during '{cause['query_type']}' query on '{cause['table']}' which indicates an issue in the database layer and it exception was {cause['exception']} and pattern was {pattern} likely indicating issues like syntax errors, integrity constraints, or connection problems in the database"
+    
+    # 🌐 HTTP
+    if cause['type'] == "external_api":
+
+        # return {
+        #     "type": "external_api",
+        #     "event_flow": event_flow,
+        #     "url": extra.get("url"),
+        #     "method": extra.get("method"),
+        #     "status_code": extra.get("status_code"),
+        #     "duration_ms": extra.get("duration_ms"),
+        #     "host": extra.get("host"),
+        #     "path": extra.get("path"),
+        #     "error": extra.get("error"),
+        #     "exception_type": extra.get("exception_type"),
+        #     "is_slow": extra.get("is_slow")
+        # }
+
+        if behavior["had_timeout"]:
+            return f'{method} {path} request failed due to external API timeout when calling {cause["url"]} and status code must be {cause["status_code"]} which took {cause["duration_ms"]} ms indicating potential performance issues with the external service with in host {cause["host"]} and it exception was {cause["exception_type"]} and pattern was {pattern} likely indicating that the external service is experiencing high latency or availability issues'
+
+        if behavior["had_failure"]:
+            return f'{method} {path} request failed due to external API error when calling {cause["url"]} and status code must be {cause["status_code"]} which indicates an issue with the external service and it exception was {cause["exception_type"]} and pattern was {pattern} likely indicating issues like network problems or invalid requests'
+
+        if behavior['had_slow']:
+            return f'{method} {path} request slow due to external API slow when calling {cause["url"]} and status code must be {cause["status_code"]} which took {cause["duration_ms"]} ms indicating potential performance issues with the external service with in host {cause["host"]}  and pattern was {pattern} likely indicating that the external service is experiencing performance degradation'
+    # ⚙️ APPLICATION
+    if cause['type'] == "application_logic":
+
+        # return {
+        #     "type": "application_logic",
+        #     "exception": extra.get("exception_type"),
+        #     "event_flow": event_flow,
+        #     "stage": extra.get("stage"),
+        #     "path": extra.get("path"),
+        #     "method": extra.get("method"),
+        # }
+        if behavior["had_failure"]:
+            return f"{method} {path} request failed due to application error ({cause['exception']}) during '{cause['stage']}' stage which indicates an issue in the application logic and it exception was {cause['exception']} and pattern was {pattern} likely indicating issues like unhandled exceptions, bugs in the code, or integration problems between different components in the application"
+        
+        if behavior['had_slow']:
+            return f"{method} {path} request slow due to application slow opreation during '{cause['stage']}' stage which indicates an issue in the application logic and it exception was {cause['exception']} and pattern was {pattern} likely indicating issues likly functional and unhandle exception in the code, or integration problems between different components in the application"
+
+        if behavior['had_timeout']:
+            return f"{method} {path} request time due to application timeout during function logic '{cause['stage']}' stage which indicates an issue in the application logic and it exception was {cause['exception']} and pattern was {pattern} likely indicating issues likly functional and unhandle exception in the code, or integration problems between different components in the application"
+
+        
+
+    if cause['type'] == "uncatchable_exception":
+
+        # return {
+        #     "type": "uncatchable_exception",
+        #     "event_flow": event_flow,
+        #     "exception": extra.get("exception_type"),
+        #     "message": extra.get("message"),
+        #     "file": extra.get("file"),
+        #     "line": extra.get("line"),
+        #     "function": extra.get("function"),
+        #     "handled": extra.get("handled")
+        # }
+
+        if behavior["had_timeout"]:
+            return f"{method} {path} request failed due to unhandled exception timeout where exception was {cause['exception']} and file source was {cause['file']} in line {cause['line']} and message was {cause['message']} which took {cause['duration_ms']} ms indicating potential performance issues in the application and it exception was {cause['exception']} and pattern was {pattern} likely indicating that the code execution is getting stuck or taking too long due to the unhandled exception"
+
+        if "deadlock" in behavior["pattern"]:
+            return f"{method} {path} request failed due to unhandled exception deadlock where exception was {cause['exception']} and file source was {cause['file']} in line {cause['line']} and message was {cause['message']} which indicates contention issues in the application and it exception was {cause['exception']} and pattern was {pattern} likely indicating multiple threads or processes are competing for the same resources in the application leading to a deadlock situation"
+
+        if behavior["had_slow"] and behavior["had_failure"]:
+            return f"{method} {path} request failed due to unhandled exception slow performance where exception was {cause['exception']} and file source was {cause['file']} in line {cause['line']} and message was {cause['message']} which took {cause['duration_ms']} ms indicating potential performance issues in the application and it exception was {cause['exception']} and pattern was {pattern} likely indicating that the unhandled exception is causing delays in code execution leading to slow performance"
+
+        if behavior["had_failure"]:
+            return f"{method} {path} request failed due to unhandled exception where exception was {cause['exception']} and file source was {cause['file']} in line {cause['line']} and message was {cause['message']} which indicates an issue in the application logic and it exception was {cause['exception']} and pattern was {pattern} likely indicating issues like unhandled exceptions, bugs in the code, or integration problems between different components in the application"
+    
+
+    if cause['type'] == "slow_function_operation":
+
+        # return {
+        #     "type": "slow_function_operation",
+        #     "event_flow": event_flow,
+        #     "function": f"{func.__module__}.{func.__qualname__}",
+        #     "duration_ms": extra.get("duration_ms"),
+        #     "error": extra.get("error"),
+        #     "exception_type": extra.get("exception_type"),
+        #     "is_slow": extra.get("is_slow")
+        # }
+
+        if behavior["had_failure"]:
+            return f"{method} {path} request failed due to slow function performance in {cause['function']} which took {cause['duration_ms']} ms indicating potential performance issues in the application and it exception was {cause['exception_type']} and pattern was {pattern} likely indicating that the function is performing inefficient operations or is being affected by external factors leading to slow performance"
+        
+        if behavior["had_timeout"]:
+            return f"{method} {path} request failed due to function timeout in {cause['function']} which took {cause['duration_ms']} ms indicating potential performance issues in the application and it exception was {cause['exception_type']} and pattern was {pattern} likely indicating that the function is performing inefficient operations or is being affected by external factors leading to it taking too long to execute and potentially causing a timeout"
+        
+        if behavior["had_slow"]:
+            return f"{method} {path} request had slow function performance in {cause['function']} which took {cause['duration_ms']} ms indicating potential performance issues in the application and it exception was {cause['exception_type']} and pattern was {pattern} likely indicating that the function is performing inefficient operations or is being affected by external factors leading to slow performance"
+
+    return (
+        f"{method} {path} request could not be classified by the system. "
+        f"This indicates a potential issue in the {cause['type']} layer "
+        f"(e.g., exception, slow operation, bug, or timeout). "
+        f"Observed exception: {cause.get('exception', 'Unknown')}. "
+        f"Detected pattern: {pattern}. "
+        f"Further investigation of the {cause['type']} layer configuration and behavior is recommended."
+    )
+
+
+
+def generate_impact(trace):
+
+    root = trace["spans"][trace["root_span_id"]]
+
+    if root["outcome"] == "FAILED":
+        return "Request failed due to critical issues"
+
+    if root["outcome"] == "DEGRADED":
+        return "Request completed with degraded performance due to underlying issues"
+    
+    if root["outcome"] == "CRITICAL":
+        return "Request failed due to critical unhandled exception which might be impacting other requests as well"
+
+    return "Request completed successfully without significant issues"
+
+
+def build_intelligence(trace):
+
+    return {
+        "outcome": trace["spans"][trace["root_span_id"]]["outcome"],
+        "root_cause": extract_root_cause(trace),
+        "explanation": generate_explanation(trace),
+        "impact": generate_impact(trace)
+    }

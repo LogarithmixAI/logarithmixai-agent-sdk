@@ -1,0 +1,92 @@
+import time
+import random
+from functools import wraps
+from agent_sdk.core.pipeline import Pipeline
+
+pipeline = Pipeline()
+
+DEFAULT_SLOW_THRESHOLD_MS = 500
+DEFAULT_TIMEOUT_MS = 4000
+
+
+def classify_function(duration, exc, slow_threshold, timeout_threshold):
+
+    is_slow = duration >= slow_threshold
+    is_timeout = duration >= timeout_threshold
+
+    if is_timeout:
+        return "FUNCTION_TIMEOUT"
+
+    if exc:
+        if is_slow:
+            return "FUNCTION_SLOW_FAILURE"
+        return "FUNCTION_FAILED"
+
+    if is_slow:
+        return "FUNCTION_SLOW"
+
+    return "FUNCTION_SUCCESS"
+
+
+def monitor_performance(threshold_ms=DEFAULT_SLOW_THRESHOLD_MS, sample_rate=1.0):
+
+    def decorator(func):
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+
+            if random.random() > sample_rate:
+                return func(*args, **kwargs)
+
+            # 🔥 local timing (no internal dependency)
+            start_time = time.time()
+            exception = None
+
+            try:
+                return func(*args, **kwargs)
+
+            except Exception as e:
+                exception = e
+                raise
+
+            finally:
+                duration_ms = int((time.time() - start_time) * 1000)
+
+                event_type = classify_function(duration_ms, exception, threshold_ms, DEFAULT_TIMEOUT_MS)
+
+                should_trace = exception or duration_ms >= threshold_ms
+                try: 
+                    if should_trace:
+                        pipeline.start("function_call", "function_performance")
+
+                        pipeline.process(
+                            event_type=event_type,
+                            category="APPLICATION",
+                            status="FAILURE" if exception else ("WARNING" if duration_ms >= threshold_ms else "SUCCESS"),
+                            metrics={},
+                            data={
+                                "function": f"{func.__module__}.{func.__qualname__}",
+                                "args_count": len(args),
+                                "kwargs_keys": list(kwargs.keys()),
+                                "exception_type": type(exception).__name__ if exception else None,
+                                "is_slow": duration_ms >= threshold_ms,
+                                "is_timeout": duration_ms >= DEFAULT_TIMEOUT_MS
+                            }
+                        )
+
+                        pipeline.end(
+                            span_extra_data={
+                                "function": f"{func.__module__}.{func.__qualname__}",
+                                "duration_ms": duration_ms,
+                                "error": bool(exception),
+                                "exception_type": type(exception).__name__ if exception else None,
+                                "is_slow": duration_ms >= threshold_ms
+                            }
+                        ) # end function call span
+                except Exception as e:
+                    # Log the error but don't let it interfere with the main function
+                    print(f"Error in performance monitoring: {e}")
+                    
+        return wrapper
+
+    return decorator
