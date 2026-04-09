@@ -33,13 +33,14 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
+dependencies = [
+    "requests>=2.28.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/LogarithmixAI"
 Organization = "https://github.com/LogarithmixAI"
 
-dependencies = [
-    "requests>=2.28.0",
-]
 
 [project.optional-dependencies]
 flask = ["flask>=2.0.0"]
