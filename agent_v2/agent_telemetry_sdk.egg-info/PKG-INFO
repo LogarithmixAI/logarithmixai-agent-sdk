@@ -1,0 +1,67 @@
+Metadata-Version: 2.4
+Name: agent-telemetry-sdk
+Version: 2.0.0
+Summary: Backend-compatible Python telemetry SDK for structured monitoring, logging, tracing, and secure event delivery.
+Author-email: ShubhamCoder-In <shubhamgarg197@gmail.com>
+Maintainer-email: LogarithmixAI <shubhamgarg197@gmail.com>
+Project-URL: Homepage, https://github.com/LogarithmixAI
+Project-URL: Organization, https://github.com/LogarithmixAI
+Keywords: telemetry,observability,monitoring,python-sdk,logging,tracing,flask,fastapi,django,sqlalchemy
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.28.0
+Provides-Extra: flask
+Requires-Dist: flask>=2.0.0; extra == "flask"
+Provides-Extra: fastapi
+Requires-Dist: fastapi>=0.100.0; extra == "fastapi"
+Requires-Dist: starlette>=0.27.0; extra == "fastapi"
+Provides-Extra: django
+Requires-Dist: django>=3.2; extra == "django"
+Provides-Extra: sqlalchemy
+Requires-Dist: sqlalchemy>=1.4; extra == "sqlalchemy"
+
+# Agent Telemetry SDK v2
+
+`agent_v2` is the stable backend-compatible SDK version in the LogarithmixAI telemetry SDK line. This version is especially important because its event types and payload structure align with the backend telemetry pipeline design used in the project.
+
+## Version Purpose
+
+- Stable backend-compatible telemetry SDK
+- Reference version for telemetry pipeline integration
+- Clean source-form SDK preserved for compatibility, validation, and future recovery work
+
+## Core Capabilities
+
+- Structured telemetry event generation
+- Multi-framework request monitoring for Flask, FastAPI, and Django
+- Outgoing HTTP monitoring
+- SQLAlchemy database monitoring
+- Logging and exception capture
+- Function performance monitoring
+- Span event generation
+- HMAC-secured event transport
+
+## Why This Version Matters
+
+This version serves as the strongest compatibility bridge between the Python SDK and the backend telemetry pipeline. It is the preserved reference point for event routing, event-type mapping, and module-level telemetry processing.
+
+## Installation Direction
+
+This folder represents the `v2.0.0` source package definition. In a versioned distribution model, users should install a released package version rather than manually copying source folders.
+
+## Ownership
+
+- Organization: [LogarithmixAI](https://github.com/LogarithmixAI)
+- Author: `ShubhamCoder-In`
+- Collaboration model: created and evolved as a collaborative LogarithmixAI SDK effort
+
+## Notes
+
+- `agent_v2` is the preserved backend-compatible SDK line.
+- This version is suitable as a reference baseline for compatibility-focused work.
+- Newer versions may evolve architecture, but this version remains important for stable backend alignment.
