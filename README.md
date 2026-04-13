@@ -1,18 +1,34 @@
-# Agent SDK V3
+# Agent Telemetry SDK v3
 
-This folder contains the V3 source package of the telemetry and monitoring SDK.
+`agent_v3` is the modular next-generation SDK version in the LogarithmixAI telemetry SDK line. It builds on earlier telemetry foundations and introduces a more organized architecture for trace-oriented monitoring, event processing, and multi-framework observability.
 
-## What is included
+## Version Purpose
 
-- `agent_sdk/`: the main Python source code
-- `pyproject.toml`: packaging and dependency configuration
+- Modular next-generation SDK line
+- Trace and span aware event pipeline foundation
+- Active architecture path for newer feature expansion
 
-## Why this version exists
+## Core Capabilities
 
-This V3 folder was created as a clean working copy based on the V2 SDK source so new updates can be developed without changing the main project implementation.
+- Structured telemetry for Flask, FastAPI, and Django
+- Request, exception, logging, HTTP, database, and performance monitoring
+- Trace-aware event processing
+- Standalone event fallback for non-trace events
+- Secure outbound event delivery
+- Modular package organization for future expansion
+
+## Why This Version Exists
+
+This version was created as the forward-moving SDK line for architecture improvement, cleaner extensibility, and stronger observability flow control. It is the active evolution path beyond the backend-compatible v2 line.
+
+## Ownership
+
+- Organization: [LogarithmixAI](https://github.com/LogarithmixAI)
+- Author: `ShubhamCoder-In`
+- Collaboration model: created and evolved as a collaborative LogarithmixAI SDK effort
 
 ## Notes
 
-- Build artifacts are intentionally not included here
-- Package output can be recreated later from this source
-- Current package version is `3.0.0`
+- `agent_v3` is the modular SDK line intended for continued expansion.
+- It should be understood as a newer architecture path, not a replacement for the preserved compatibility role of `agent_v2`.
+- Current package version is `3.0.0`.
