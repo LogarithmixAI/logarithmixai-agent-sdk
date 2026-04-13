@@ -1,0 +1,59 @@
+Metadata-Version: 2.4
+Name: agent-telemetry-sdk
+Version: 1.0.0
+Summary: Foundational Python telemetry and monitoring SDK for structured observability data collection.
+Author-email: ShubhamCoder-In <shubhamgarg197@gmail.com>
+Maintainer-email: LogarithmixAI <shubhamgarg197@gmail.com>
+Project-URL: Homepage, https://github.com/LogarithmixAI
+Project-URL: Organization, https://github.com/LogarithmixAI
+Keywords: telemetry,observability,monitoring,python-sdk,logging,tracing,flask,fastapi,django
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.28.0
+Provides-Extra: flask
+Requires-Dist: flask>=2.0.0; extra == "flask"
+Provides-Extra: fastapi
+Requires-Dist: fastapi>=0.100.0; extra == "fastapi"
+Requires-Dist: starlette>=0.27.0; extra == "fastapi"
+Provides-Extra: django
+Requires-Dist: django>=3.2; extra == "django"
+Provides-Extra: sqlalchemy
+Requires-Dist: sqlalchemy>=1.4; extra == "sqlalchemy"
+
+# Agent Telemetry SDK v1
+
+`agent_v1` is the foundational SDK version in the LogarithmixAI agent telemetry line. It represents the early structured monitoring baseline used to establish the core event model, secure transport flow, and multi-framework instrumentation direction for later versions.
+
+## Version Purpose
+
+- Foundational SDK prototype for structured telemetry collection
+- Early reference point for event schema and monitoring features
+- Base stage in the evolution toward backend-aware and trace-aware SDK versions
+
+## Core Capabilities
+
+- Structured event generation
+- Secure outbound event delivery
+- Exception and logging capture
+- HTTP activity monitoring
+- Database monitoring support
+- Multi-framework integration direction for Flask, FastAPI, and Django
+
+## Project Positioning
+
+This version should be treated as the initial product foundation inside the broader LogarithmixAI SDK roadmap. It is useful for historical reference, architecture understanding, and early compatibility review.
+
+## Ownership
+
+- Organization: [LogarithmixAI](https://github.com/LogarithmixAI)
+- Author: `ShubhamCoder-In`
+
+## Notes
+
+- This version is preserved as part of the SDK evolution history.
+- Later versions introduce stronger backend compatibility and more modular architecture.
