@@ -7,6 +7,7 @@
 
 Structured Python observability SDKs created under [LogarithmixAI](https://github.com/LogarithmixAI) for collecting telemetry, logs, traces, performance signals, database activity, and framework-level request insights across multiple SDK generations.
 
+
 ## What This Repository Is
 
 This repository is the versioned home of the LogarithmixAI Agent SDK line. It preserves the evolution of the SDK across foundational, backend-compatible, and modular next-generation stages so contributors and users can understand how the platform matured over time.
