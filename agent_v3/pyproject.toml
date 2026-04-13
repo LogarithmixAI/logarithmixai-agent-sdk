@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-telemetry-sdk-v3"
+version = "3.0.0"
+description = "V3 source package for the structured telemetry and monitoring SDK."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Project Maintainer", email = "maintainer@example.com" }
+]
+keywords = ["monitoring", "telemetry", "apm", "logging", "observability", "sdk"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent"
+]
+
+dependencies = [
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+flask = ["flask>=2.0.0"]
+fastapi = ["fastapi>=0.100.0", "starlette>=0.27.0"]
+django = ["django>=3.2"]
+sqlalchemy = ["sqlalchemy>=1.4"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_sdk*"]
+
+[tool.setuptools]
+include-package-data = true
